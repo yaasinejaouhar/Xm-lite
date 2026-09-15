@@ -15,8 +15,9 @@ jobs:
         run: |
           mkdir build-project
           unzip -q XM-Lite-GitHub-Actions.zip -d build-project
-          echo "Extracted files:"
-          find build-project -maxdepth 5 -type f | head -100
+
+          echo "Project files:"
+          find build-project -maxdepth 5 -type f | sort
 
       - name: Find Android project
         run: |
@@ -24,12 +25,12 @@ jobs:
 
           if [ -z "$SETTINGS" ]; then
             echo "ERROR: settings.gradle not found"
-            find build-project -maxdepth 5 -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
           echo "Android project: $PROJECT_DIR"
 
       - name: Set up JDK
@@ -38,20 +39,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          GRADLEW=$(find "${{ env.PROJECT_DIR }}" -name gradlew -type f | head -1)
-
-          if [ -z "$GRADLEW" ]; then
-            echo "ERROR: gradlew not found"
-            find build-project -maxdepth 5 -type f | sort
-            exit 1
-          fi
-
-          echo "Found Gradle wrapper: $GRADLEW"
-          chmod +x "$GRADLEW"
-          cd "$(dirname "$GRADLEW")"
-          ./gradlew assembleDebug
+          gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
