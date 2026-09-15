@@ -11,12 +11,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract project ZIP
+      - name: Find and Extract Project ZIP
         run: |
-          mkdir build-project
-          unzip -q XM-Lite-GitHub-Actions.zip -d build-project
+          ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -1)
 
-          echo "Project files:"
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No ZIP file found"
+            find . -maxdepth 3 -type f
+            exit 1
+          fi
+
+          echo "Using ZIP: $ZIP"
+          mkdir build-project
+          unzip -q "$ZIP" -d build-project
+
+          echo "Extracted files:"
           find build-project -maxdepth 5 -type f | sort
 
       - name: Find Android project
@@ -50,5 +59,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: XM-Lite-debug-apk
+          name: XM-Lite-No-Popups-debug-apk
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
