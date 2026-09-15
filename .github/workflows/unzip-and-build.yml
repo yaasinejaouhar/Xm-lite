@@ -1,6 +1,47 @@
+name: Build XM Lite APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract project ZIP
+        run: |
+          mkdir build-project
+          unzip -q XM-Lite-GitHub-Actions.zip -d build-project
+          echo "Extracted files:"
+          find build-project -maxdepth 5 -type f | head -100
+
+      - name: Find Android project
+        run: |
+          SETTINGS=$(find build-project -name settings.gradle -o -name settings.gradle.kts | head -1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle not found"
+            find build-project -maxdepth 5 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Android project: $PROJECT_DIR"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Build APK
         run: |
           GRADLEW=$(find "${{ env.PROJECT_DIR }}" -name gradlew -type f | head -1)
+
           if [ -z "$GRADLEW" ]; then
             echo "ERROR: gradlew not found"
             find build-project -maxdepth 5 -type f | sort
@@ -11,3 +52,9 @@
           chmod +x "$GRADLEW"
           cd "$(dirname "$GRADLEW")"
           ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: XM-Lite-debug-apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
