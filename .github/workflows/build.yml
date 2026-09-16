@@ -1,10 +1,10 @@
-name: Inspect Force Update Logic
+name: Build XM Lite - Force Update OFF
 
 on:
   workflow_dispatch:
 
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,22 +27,95 @@ jobs:
         run: |
           java -jar apktool.jar d base.apk -o decoded --force
 
-      - name: Extract he0 method
+      - name: Disable Force Update Only
         run: |
-          sed -n '500,610p' decoded/smali/AB/he0.smali \
-            > force-update-context.txt
+          FILE="decoded/smali/AB/he0.smali"
 
-          cat force-update-context.txt
+          if [ ! -f "$FILE" ]; then
+            echo "ERROR: he0.smali not found"
+            exit 1
+          fi
 
-      - name: Find method header
+          python3 - "$FILE" <<'PY'
+          import sys
+
+          path = sys.argv[1]
+
+          with open(path, "r", encoding="utf-8") as f:
+              data = f.read()
+
+          old = """    :goto_6
+              invoke-direct {v4, v5, v6, v7, v2}, LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V"""
+
+          new = """    :goto_6
+              const/4 v2, 0x0
+              invoke-direct {v4, v5, v6, v7, v2}, LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V"""
+
+          if old not in data:
+              print("ERROR: Target code was not found.")
+              raise SystemExit(1)
+
+          if data.count(old) != 1:
+              print("ERROR: Target code was found more than once.")
+              raise SystemExit(1)
+
+          data = data.replace(old, new, 1)
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(data)
+
+          print("SUCCESS: Force Update flag changed to false.")
+          PY
+
+          echo "===== Modified section ====="
+          grep -n -B 3 -A 5 \
+            "LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V" \
+            "$FILE"
+
+      - name: Rebuild APK
         run: |
-          grep -n -B 5 -A 100 \
-            "invoke-direct {v4, v5, v6, v7, v2}, LAB/Za;-><init>" \
-            decoded/smali/AB/he0.smali \
-            >> force-update-context.txt || true
+          java -jar apktool.jar b decoded -o XM-Lite-ForceUpdate-Off-unsigned.apk
 
-      - name: Upload context
+      - name: Install Android Build Tools
+        uses: android-actions/setup-android@v3
+
+      - name: Align APK
+        run: |
+          sdkmanager "build-tools;35.0.0"
+          mkdir -p output
+
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            -f 4 \
+            XM-Lite-ForceUpdate-Off-unsigned.apk \
+            output/XM-Lite-ForceUpdate-Off.apk
+
+      - name: Generate signing key
+        run: |
+          keytool -genkeypair \
+            -v \
+            -keystore release.keystore \
+            -alias xm-lite \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass android \
+            -keypass android \
+            -dname "CN=XM Lite"
+
+      - name: Sign APK
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks release.keystore \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            output/XM-Lite-ForceUpdate-Off.apk
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose \
+            output/XM-Lite-ForceUpdate-Off.apk
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Force-Update-Context
-          path: force-update-context.txt
+          name: XM-Lite-ForceUpdate-Off
+          path: output/XM-Lite-ForceUpdate-Off.apk
