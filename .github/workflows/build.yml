@@ -1,4 +1,4 @@
-name: Find MovieBox Force Update
+name: Inspect Force Update
 
 on:
   workflow_dispatch:
@@ -27,58 +27,48 @@ jobs:
         run: |
           java -jar apktool.jar d base.apk -o decoded --force
 
-      - name: Search Force Update
+      - name: Inspect Za
         run: |
-          echo "================================"
-          echo "Searching getForceUpdate"
-          echo "================================"
-          grep -RIn "getForceUpdate" decoded/ || true
+          FILE="decoded/smali/AB/Za.smali"
+
+          echo "===== CLASS HEADER ====="
+          sed -n '1,100p' "$FILE"
 
           echo ""
-          echo "================================"
-          echo "Searching getHasUpdate"
-          echo "================================"
-          grep -RIn "getHasUpdate" decoded/ || true
+          echo "===== ALL REFERENCES TO FIELD c:Z ====="
+          grep -n -B 8 -A 12 "LAB/Za;->c:Z" "$FILE" || true
 
           echo ""
-          echo "================================"
-          echo "Searching isForceUpdate"
-          echo "================================"
-          grep -RIn "isForceUpdate" decoded/ || true
+          echo "===== CONSTRUCTORS ====="
+          grep -n -A 100 "\.method.*<init>" "$FILE" || true
 
           echo ""
-          echo "================================"
-          echo "Searching RemoteVersionInfo"
-          echo "================================"
-          grep -RIn "RemoteVersionInfo" decoded/ || true
+          echo "===== METHODS IN Za ====="
+          grep -n "\.method" "$FILE" || true
 
-      - name: Show Force Update context
+      - name: Save results
         run: |
-          echo "===== Za.smali around line 287 ====="
-          nl -ba decoded/smali/AB/Za.smali | sed -n '250,320p'
+          FILE="decoded/smali/AB/Za.smali"
 
-      - name: Save search results
-        run: |
           {
-            echo "=== getForceUpdate ==="
-            grep -RIn "getForceUpdate" decoded/ || true
-
-            echo "=== getHasUpdate ==="
-            grep -RIn "getHasUpdate" decoded/ || true
-
-            echo "=== isForceUpdate ==="
-            grep -RIn "isForceUpdate" decoded/ || true
-
-            echo "=== RemoteVersionInfo ==="
-            grep -RIn "RemoteVersionInfo" decoded/ || true
+            echo "===== CLASS HEADER ====="
+            sed -n '1,100p' "$FILE"
 
             echo ""
-            echo "=== CONTEXT Za.smali ==="
-            nl -ba decoded/smali/AB/Za.smali | sed -n '250,320p'
-          } > search-results.txt
+            echo "===== ALL REFERENCES TO FIELD c:Z ====="
+            grep -n -B 8 -A 12 "LAB/Za;->c:Z" "$FILE" || true
 
-      - name: Upload search results
+            echo ""
+            echo "===== CONSTRUCTORS ====="
+            grep -n -A 100 "\.method.*<init>" "$FILE" || true
+
+            echo ""
+            echo "===== METHODS ====="
+            grep -n "\.method" "$FILE" || true
+          } > Za-results.txt
+
+      - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: Force-Update-Search
-          path: search-results.txt
+          name: Za-ForceUpdate-Results
+          path: Za-results.txt
