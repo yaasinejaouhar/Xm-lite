@@ -1,4 +1,4 @@
-name: Find Force Update Caller
+name: Inspect Force Update Logic
 
 on:
   workflow_dispatch:
@@ -27,38 +27,22 @@ jobs:
         run: |
           java -jar apktool.jar d base.apk -o decoded --force
 
-      - name: Find Za constructor callers
+      - name: Extract he0 method
         run: |
-          echo "===== Za constructor references ====="
+          sed -n '500,610p' decoded/smali/AB/he0.smali \
+            > force-update-context.txt
 
-          grep -RIn -B 15 -A 15 \
-            "LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V" \
-            decoded/ || true
+          cat force-update-context.txt
 
-          echo ""
-          echo "===== All references to LAB/Za; ====="
-
-          grep -RIn \
-            "LAB/Za;" \
-            decoded/ || true
-
-      - name: Save results
+      - name: Find method header
         run: |
-          {
-            echo "===== Za constructor references ====="
-            grep -RIn -B 15 -A 15 \
-              "LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V" \
-              decoded/ || true
+          grep -n -B 5 -A 100 \
+            "invoke-direct {v4, v5, v6, v7, v2}, LAB/Za;-><init>" \
+            decoded/smali/AB/he0.smali \
+            >> force-update-context.txt || true
 
-            echo ""
-            echo "===== All references to LAB/Za; ====="
-            grep -RIn \
-              "LAB/Za;" \
-              decoded/ || true
-          } > Za-caller-results.txt
-
-      - name: Upload results
+      - name: Upload context
         uses: actions/upload-artifact@v4
         with:
-          name: Za-Caller-Results
-          path: Za-caller-results.txt
+          name: Force-Update-Context
+          path: force-update-context.txt
