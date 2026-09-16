@@ -1,4 +1,4 @@
-name: Inspect Force Update
+name: Find Force Update Caller
 
 on:
   workflow_dispatch:
@@ -27,48 +27,38 @@ jobs:
         run: |
           java -jar apktool.jar d base.apk -o decoded --force
 
-      - name: Inspect Za
+      - name: Find Za constructor callers
         run: |
-          FILE="decoded/smali/AB/Za.smali"
+          echo "===== Za constructor references ====="
 
-          echo "===== CLASS HEADER ====="
-          sed -n '1,100p' "$FILE"
-
-          echo ""
-          echo "===== ALL REFERENCES TO FIELD c:Z ====="
-          grep -n -B 8 -A 12 "LAB/Za;->c:Z" "$FILE" || true
+          grep -RIn -B 15 -A 15 \
+            "LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V" \
+            decoded/ || true
 
           echo ""
-          echo "===== CONSTRUCTORS ====="
-          grep -n -A 100 "\.method.*<init>" "$FILE" || true
+          echo "===== All references to LAB/Za; ====="
 
-          echo ""
-          echo "===== METHODS IN Za ====="
-          grep -n "\.method" "$FILE" || true
+          grep -RIn \
+            "LAB/Za;" \
+            decoded/ || true
 
       - name: Save results
         run: |
-          FILE="decoded/smali/AB/Za.smali"
-
           {
-            echo "===== CLASS HEADER ====="
-            sed -n '1,100p' "$FILE"
+            echo "===== Za constructor references ====="
+            grep -RIn -B 15 -A 15 \
+              "LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V" \
+              decoded/ || true
 
             echo ""
-            echo "===== ALL REFERENCES TO FIELD c:Z ====="
-            grep -n -B 8 -A 12 "LAB/Za;->c:Z" "$FILE" || true
-
-            echo ""
-            echo "===== CONSTRUCTORS ====="
-            grep -n -A 100 "\.method.*<init>" "$FILE" || true
-
-            echo ""
-            echo "===== METHODS ====="
-            grep -n "\.method" "$FILE" || true
-          } > Za-results.txt
+            echo "===== All references to LAB/Za; ====="
+            grep -RIn \
+              "LAB/Za;" \
+              decoded/ || true
+          } > Za-caller-results.txt
 
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: Za-ForceUpdate-Results
-          path: Za-results.txt
+          name: Za-Caller-Results
+          path: Za-caller-results.txt
