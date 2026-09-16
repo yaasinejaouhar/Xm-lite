@@ -1,159 +1,80 @@
-name: Build XM Lite - Force Update OFF
+name: Find MovieBox Force Update
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  inspect:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget zipalign
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - name: Download Apktool
         run: |
-          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar -O apktool.jar
+          wget -q \
+            https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar \
+            -O apktool.jar
 
       - name: Decode APK
         run: |
           java -jar apktool.jar d base.apk -o decoded --force
 
-      - name: Find RemoteVersionInfo
+      - name: Search Force Update
         run: |
-          echo "Searching for RemoteVersionInfo..."
-          grep -RIl "RemoteVersionInfo" decoded/ || true
+          echo "================================"
+          echo "Searching getForceUpdate"
+          echo "================================"
+          grep -RIn "getForceUpdate" decoded/ || true
 
-      - name: Disable Force Update
+          echo ""
+          echo "================================"
+          echo "Searching getHasUpdate"
+          echo "================================"
+          grep -RIn "getHasUpdate" decoded/ || true
+
+          echo ""
+          echo "================================"
+          echo "Searching isForceUpdate"
+          echo "================================"
+          grep -RIn "isForceUpdate" decoded/ || true
+
+          echo ""
+          echo "================================"
+          echo "Searching RemoteVersionInfo"
+          echo "================================"
+          grep -RIn "RemoteVersionInfo" decoded/ || true
+
+          echo ""
+          echo "================================"
+          echo "Update-related files"
+          echo "================================"
+          find decoded -type f \
+            \( -iname "*update*" -o -iname "*version*" \) \
+            -print | head -200
+
+      - name: Save search results
         run: |
-          python3 <<'PY'
-          import os
-          import re
+          {
+            echo "=== getForceUpdate ==="
+            grep -RIn "getForceUpdate" decoded/ || true
+            echo "=== getHasUpdate ==="
+            grep -RIn "getHasUpdate" decoded/ || true
+            echo "=== isForceUpdate ==="
+            grep -RIn "isForceUpdate" decoded/ || true
+            echo "=== RemoteVersionInfo ==="
+            grep -RIn "RemoteVersionInfo" decoded/ || true
+          } > search-results.txt
 
-          root = "decoded"
-          found = []
-
-          for dirpath, _, filenames in os.walk(root):
-              for filename in filenames:
-                  if filename.endswith(".smali"):
-                      path = os.path.join(dirpath, filename)
-
-                      try:
-                          with open(path, "r", encoding="utf-8") as f:
-                              data = f.read()
-                      except:
-                          continue
-
-                      if "RemoteVersionInfo" not in data:
-                          continue
-
-                      if "getForceUpdate" not in data and "getHasUpdate" not in data:
-                          continue
-
-                      found.append(path)
-
-          if not found:
-              print("ERROR: RemoteVersionInfo / update methods were not found.")
-              print("Available matching files:")
-              os.system('grep -RIl "getForceUpdate\\|getHasUpdate" decoded/ || true')
-              raise SystemExit(1)
-
-          print("Found:")
-          for path in found:
-              print(path)
-
-          patched = 0
-
-          for path in found:
-              with open(path, "r", encoding="utf-8") as f:
-                  data = f.read()
-
-              original = data
-
-              for method_name in ["getForceUpdate", "getHasUpdate"]:
-                  pattern = (
-                      r'(\.method[^\n]*\s'
-                      + re.escape(method_name)
-                      + r'\(\)Z[^\n]*\n)'
-                      r'(.*?)'
-                      r'(\n\.end method)'
-                  )
-
-                  def replace(m):
-                      header = m.group(1)
-                      end = m.group(3)
-
-                      return (
-                          header +
-                          "    .locals 1\n"
-                          "    const/4 v0, 0x0\n"
-                          "    return v0" +
-                          end
-                      )
-
-                  data, count = re.subn(
-                      pattern,
-                      replace,
-                      data,
-                      flags=re.DOTALL
-                  )
-
-                  if count:
-                      print(f"Patched {method_name} in {path}")
-                      patched += count
-
-              if data != original:
-                  with open(path, "w", encoding="utf-8") as f:
-                      f.write(data)
-
-          if patched == 0:
-              print("ERROR: The methods were found but could not be patched.")
-              raise SystemExit(1)
-
-          print(f"Successfully patched {patched} method(s).")
-          PY
-
-      - name: Rebuild APK
-        run: |
-          java -jar apktool.jar b decoded -o XM-Lite-ForceUpdate-Off-unsigned.apk
-
-      - name: Align APK
-        run: |
-          mkdir -p output
-          zipalign -f 4 \
-            XM-Lite-ForceUpdate-Off-unsigned.apk \
-            output/XM-Lite-ForceUpdate-Off.apk
-
-      - name: Generate signing key
-        run: |
-          keytool -genkeypair \
-            -v \
-            -keystore release.keystore \
-            -alias xm-lite \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass android \
-            -keypass android \
-            -dname "CN=XM Lite"
-
-      - name: Sign APK
-        run: |
-          apksigner sign \
-            --ks release.keystore \
-            --ks-pass pass:android \
-            --key-pass pass:android \
-            output/XM-Lite-ForceUpdate-Off.apk
-
-          apksigner verify output/XM-Lite-ForceUpdate-Off.apk
-
-      - name: Upload APK
+      - name: Upload search results
         uses: actions/upload-artifact@v4
         with:
-          name: XM-Lite-ForceUpdate-Off
-          path: output/XM-Lite-ForceUpdate-Off.apk
+          name: Force-Update-Search
+          path: search-results.txt
