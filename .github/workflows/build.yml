@@ -52,25 +52,29 @@ jobs:
           echo "================================"
           grep -RIn "RemoteVersionInfo" decoded/ || true
 
-          echo ""
-          echo "================================"
-          echo "Update-related files"
-          echo "================================"
-          find decoded -type f \
-            \( -iname "*update*" -o -iname "*version*" \) \
-            -print | head -200
+      - name: Show Force Update context
+        run: |
+          echo "===== Za.smali around line 287 ====="
+          nl -ba decoded/smali/AB/Za.smali | sed -n '250,320p'
 
       - name: Save search results
         run: |
           {
             echo "=== getForceUpdate ==="
             grep -RIn "getForceUpdate" decoded/ || true
+
             echo "=== getHasUpdate ==="
             grep -RIn "getHasUpdate" decoded/ || true
+
             echo "=== isForceUpdate ==="
             grep -RIn "isForceUpdate" decoded/ || true
+
             echo "=== RemoteVersionInfo ==="
             grep -RIn "RemoteVersionInfo" decoded/ || true
+
+            echo ""
+            echo "=== CONTEXT Za.smali ==="
+            nl -ba decoded/smali/AB/Za.smali | sed -n '250,320p'
           } > search-results.txt
 
       - name: Upload search results
