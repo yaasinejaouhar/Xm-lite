@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -38,28 +39,44 @@ jobs:
 
           python3 - "$FILE" <<'PY'
           import sys
+          import re
 
           path = sys.argv[1]
 
           with open(path, "r", encoding="utf-8") as f:
               data = f.read()
 
-          old = """    :goto_6
-              invoke-direct {v4, v5, v6, v7, v2}, LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V"""
+          pattern = (
+              r'(:goto_6\s*)\n'
+              r'(\s*)'
+              r'(invoke-direct\s+\{v4,\s*v5,\s*v6,\s*v7,\s*v2\},'
+              r'\s*LAB/Za;-><init>\('
+              r'Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z\)V)'
+          )
 
-          new = """    :goto_6
-              const/4 v2, 0x0
-              invoke-direct {v4, v5, v6, v7, v2}, LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V"""
+          replacement = (
+              r'\1\n'
+              r'\2const/4 v2, 0x0\n'
+              r'\2\3'
+          )
 
-          if old not in data:
-              print("ERROR: Target code was not found.")
+          data, count = re.subn(
+              pattern,
+              replacement,
+              data,
+              count=1
+          )
+
+          if count != 1:
+              print("ERROR: Force Update constructor call not found.")
+              print("")
+              print("Available LAB/Za constructor calls:")
+
+              for line in data.splitlines():
+                  if "LAB/Za;-><init>" in line:
+                      print(line)
+
               raise SystemExit(1)
-
-          if data.count(old) != 1:
-              print("ERROR: Target code was found more than once.")
-              raise SystemExit(1)
-
-          data = data.replace(old, new, 1)
 
           with open(path, "w", encoding="utf-8") as f:
               f.write(data)
@@ -67,14 +84,17 @@ jobs:
           print("SUCCESS: Force Update flag changed to false.")
           PY
 
+          echo ""
           echo "===== Modified section ====="
-          grep -n -B 3 -A 5 \
+
+          grep -n -B 4 -A 6 \
             "LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V" \
             "$FILE"
 
       - name: Rebuild APK
         run: |
-          java -jar apktool.jar b decoded -o XM-Lite-ForceUpdate-Off-unsigned.apk
+          java -jar apktool.jar b decoded \
+            -o XM-Lite-ForceUpdate-Off-unsigned.apk
 
       - name: Install Android Build Tools
         uses: android-actions/setup-android@v3
@@ -82,6 +102,7 @@ jobs:
       - name: Align APK
         run: |
           sdkmanager "build-tools;35.0.0"
+
           mkdir -p output
 
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
@@ -89,7 +110,7 @@ jobs:
             XM-Lite-ForceUpdate-Off-unsigned.apk \
             output/XM-Lite-ForceUpdate-Off.apk
 
-      - name: Generate signing key
+      - name: Generate Signing Key
         run: |
           keytool -genkeypair \
             -v \
@@ -110,6 +131,8 @@ jobs:
             --key-pass pass:android \
             output/XM-Lite-ForceUpdate-Off.apk
 
+      - name: Verify APK
+        run: |
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
             --verbose \
             output/XM-Lite-ForceUpdate-Off.apk
