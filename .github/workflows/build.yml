@@ -14,7 +14,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget unzip zipalign
+          sudo apt-get install -y wget zipalign
 
       - name: Download Apktool
         run: |
@@ -24,67 +24,98 @@ jobs:
         run: |
           java -jar apktool.jar d base.apk -o decoded --force
 
+      - name: Find RemoteVersionInfo
+        run: |
+          echo "Searching for RemoteVersionInfo..."
+          grep -RIl "RemoteVersionInfo" decoded/ || true
+
       - name: Disable Force Update
         run: |
-          FILE="decoded/smali/com/transsion/version/update/RemoteVersionInfo.smali"
-
-          if [ ! -f "$FILE" ]; then
-            echo "ERROR: RemoteVersionInfo.smali not found"
-            find decoded -iname "*RemoteVersionInfo*.smali" -print
-            exit 1
-          fi
-
-          python3 - "$FILE" <<'PY'
-          import sys
+          python3 <<'PY'
+          import os
           import re
 
-          path = sys.argv[1]
+          root = "decoded"
+          found = []
 
-          with open(path, "r", encoding="utf-8") as f:
-              data = f.read()
+          for dirpath, _, filenames in os.walk(root):
+              for filename in filenames:
+                  if filename.endswith(".smali"):
+                      path = os.path.join(dirpath, filename)
 
-          def patch_method(text, name):
-              pattern = (
-                  r'(\.method[^\n]*\s'
-                  + re.escape(name)
-                  + r'\(\)Z\n)'
-                  r'(.*?)'
-                  r'(\n\.end method)'
-              )
+                      try:
+                          with open(path, "r", encoding="utf-8") as f:
+                              data = f.read()
+                      except:
+                          continue
 
-              def replace(m):
-                  header = m.group(1)
-                  body = m.group(2)
-                  end = m.group(3)
+                      if "RemoteVersionInfo" not in data:
+                          continue
 
-                  return (
-                      header +
-                      "    .locals 1\n"
-                      "    const/4 v0, 0x0\n"
-                      "    return v0" +
-                      end
+                      if "getForceUpdate" not in data and "getHasUpdate" not in data:
+                          continue
+
+                      found.append(path)
+
+          if not found:
+              print("ERROR: RemoteVersionInfo / update methods were not found.")
+              print("Available matching files:")
+              os.system('grep -RIl "getForceUpdate\\|getHasUpdate" decoded/ || true')
+              raise SystemExit(1)
+
+          print("Found:")
+          for path in found:
+              print(path)
+
+          patched = 0
+
+          for path in found:
+              with open(path, "r", encoding="utf-8") as f:
+                  data = f.read()
+
+              original = data
+
+              for method_name in ["getForceUpdate", "getHasUpdate"]:
+                  pattern = (
+                      r'(\.method[^\n]*\s'
+                      + re.escape(method_name)
+                      + r'\(\)Z[^\n]*\n)'
+                      r'(.*?)'
+                      r'(\n\.end method)'
                   )
 
-              new_text, count = re.subn(
-                  pattern,
-                  replace,
-                  text,
-                  flags=re.DOTALL
-              )
+                  def replace(m):
+                      header = m.group(1)
+                      end = m.group(3)
 
-              if count == 0:
-                  raise SystemExit(
-                      f"ERROR: Method {name}()Z was not found"
+                      return (
+                          header +
+                          "    .locals 1\n"
+                          "    const/4 v0, 0x0\n"
+                          "    return v0" +
+                          end
+                      )
+
+                  data, count = re.subn(
+                      pattern,
+                      replace,
+                      data,
+                      flags=re.DOTALL
                   )
 
-              print(f"Patched {name}(): {count} method(s)")
-              return new_text
+                  if count:
+                      print(f"Patched {method_name} in {path}")
+                      patched += count
 
-          data = patch_method(data, "getForceUpdate")
-          data = patch_method(data, "getHasUpdate")
+              if data != original:
+                  with open(path, "w", encoding="utf-8") as f:
+                      f.write(data)
 
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(data)
+          if patched == 0:
+              print("ERROR: The methods were found but could not be patched.")
+              raise SystemExit(1)
+
+          print(f"Successfully patched {patched} method(s).")
           PY
 
       - name: Rebuild APK
@@ -119,8 +150,7 @@ jobs:
             --key-pass pass:android \
             output/XM-Lite-ForceUpdate-Off.apk
 
-          apksigner verify \
-            output/XM-Lite-ForceUpdate-Off.apk
+          apksigner verify output/XM-Lite-ForceUpdate-Off.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
