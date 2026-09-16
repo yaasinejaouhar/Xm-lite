@@ -8,112 +8,252 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # 1. Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2. Install Java
       - name: Install Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+      # 3. Check APK
+      - name: Check APK
+        run: |
+          if [ ! -f "base.apk" ]; then
+            echo "ERROR: base.apk not found in repository root."
+            exit 1
+          fi
+
+          ls -lh base.apk
+
+      # 4. Download Apktool
       - name: Download Apktool
         run: |
           wget -q \
             https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar \
             -O apktool.jar
 
+          java -jar apktool.jar --version
+
+      # 5. Decode APK
       - name: Decode APK
         run: |
-          java -jar apktool.jar d base.apk -o decoded --force
+          rm -rf decoded
 
+          java -jar apktool.jar d \
+            base.apk \
+            -o decoded \
+            --force
+
+      # 6. Find Force Update class
+      - name: Locate Force Update
+        run: |
+          echo "===== Searching for Za class ====="
+
+          find decoded/smali* -type f -name "Za.smali" -print
+
+          echo "===== Searching for isForceUpdate ====="
+
+          grep -Rni \
+            "isForceUpdate" \
+            decoded/smali* \
+            || true
+
+          echo "===== Searching for Za constructor ====="
+
+          grep -Rni \
+            'LAB/Za;-><init>' \
+            decoded/smali* \
+            || true
+
+      # 7. Disable Force Update ONLY
       - name: Disable Force Update Only
         run: |
-          FILE="decoded/smali/AB/he0.smali"
+          python3 <<'PY'
+          import os
+          import re
+          import sys
 
-          if [ ! -f "$FILE" ]; then
-            echo "ERROR: he0.smali not found"
+          root = "decoded"
+
+          candidates = []
+
+          for base, dirs, files in os.walk(root):
+              for name in files:
+                  if name == "he0.smali":
+                      candidates.append(os.path.join(base, name))
+
+          print("Found he0.smali files:")
+          for f in candidates:
+              print(" -", f)
+
+          if not candidates:
+              print("ERROR: he0.smali was not found.")
+              sys.exit(1)
+
+          modified = False
+
+          for path in candidates:
+
+              with open(path, "r", encoding="utf-8") as f:
+                  data = f.read()
+
+              target = (
+                  r'(:goto_6\s*)'
+                  r'(invoke-direct \{v4, v5, v6, v7, v2\}, '
+                  r'LAB/Za;-><init>'
+                  r'\(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z\)V)'
+              )
+
+              match = re.search(target, data)
+
+              if not match:
+                  continue
+
+              print("Target found in:", path)
+
+              replacement = (
+                  match.group(1)
+                  + "    const/4 v2, 0x0\n\n"
+                  + "    "
+                  + match.group(2)
+              )
+
+              data = data[:match.start()] + replacement + data[match.end():]
+
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(data)
+
+              print("SUCCESS: Force Update flag changed to FALSE.")
+              modified = True
+              break
+
+          if not modified:
+              print("ERROR: Force Update constructor was not found.")
+              print("Available constructor references:")
+
+              os.system(
+                  "grep -Rni "
+                  "'LAB/Za;-><init>' "
+                  "decoded/smali* || true"
+              )
+
+              sys.exit(1)
+          PY
+
+      # 8. Verify modification
+      - name: Verify Force Update Modification
+        run: |
+          echo "===== Modified constructor ====="
+
+          grep -Rni -B 5 -A 5 \
+            'LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V' \
+            decoded/smali* \
+            || true
+
+          echo "===== Za class ====="
+
+          find decoded/smali* \
+            -type f \
+            -name "Za.smali" \
+            -print
+
+      # 9. Rebuild APK
+      - name: Rebuild APK
+        run: |
+          rm -f XM-Lite-ForceUpdate-Off-unsigned.apk
+
+          java -jar apktool.jar b \
+            decoded \
+            -o XM-Lite-ForceUpdate-Off-unsigned.apk
+
+          ls -lh XM-Lite-ForceUpdate-Off-unsigned.apk
+
+      # 10. Locate Android SDK
+      - name: Locate Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          command -v sdkmanager || true
+
+          find "$ANDROID_HOME" \
+            -type f \
+            -name sdkmanager \
+            2>/dev/null \
+            | head -20
+
+      # 11. Accept SDK licenses and install build tools
+      - name: Install Build Tools
+        run: |
+          set -e
+
+          SDKMANAGER="$(find "$ANDROID_HOME" -type f -name sdkmanager 2>/dev/null | head -1)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found."
             exit 1
           fi
 
-          python3 - "$FILE" <<'PY'
-          import sys
-          import re
+          echo "Using sdkmanager:"
+          echo "$SDKMANAGER"
 
-          path = sys.argv[1]
+          chmod +x "$SDKMANAGER"
 
-          with open(path, "r", encoding="utf-8") as f:
-              data = f.read()
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
-          pattern = (
-              r'(:goto_6\s*)\n'
-              r'(\s*)'
-              r'(invoke-direct\s+\{v4,\s*v5,\s*v6,\s*v7,\s*v2\},'
-              r'\s*LAB/Za;-><init>\('
-              r'Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z\)V)'
-          )
+          "$SDKMANAGER" "build-tools;35.0.0"
 
-          replacement = (
-              r'\1\n'
-              r'\2const/4 v2, 0x0\n'
-              r'\2\3'
-          )
-
-          data, count = re.subn(
-              pattern,
-              replacement,
-              data,
-              count=1
-          )
-
-          if count != 1:
-              print("ERROR: Target Force Update constructor was not found.")
-              print("Available constructor calls:")
-
-              for line in data.splitlines():
-                  if "LAB/Za;-><init>" in line:
-                      print(line)
-
-              raise SystemExit(1)
-
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(data)
-
-          print("SUCCESS: Force Update disabled.")
-          PY
-
-          echo "===== Modified section ====="
-
-          grep -n -B 4 -A 6 \
-            "LAB/Za;-><init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V" \
-            "$FILE"
-
-      - name: Rebuild APK
+      # 12. Find zipalign and apksigner
+      - name: Find Build Tools
         run: |
-          java -jar apktool.jar b decoded \
-            -o XM-Lite-ForceUpdate-Off-unsigned.apk
+          ZIPALIGN="$(find "$ANDROID_HOME" \
+            -type f \
+            -name zipalign \
+            | sort -V \
+            | tail -1)"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+          APKSIGNER="$(find "$ANDROID_HOME" \
+            -type f \
+            -name apksigner \
+            | sort -V \
+            | tail -1)"
 
-      - name: Accept Android SDK licenses
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
+          if [ -z "$ZIPALIGN" ]; then
+            echo "ERROR: zipalign not found."
+            exit 1
+          fi
 
-      - name: Install Build Tools
-        run: |
-          sdkmanager "platform-tools" "build-tools;35.0.0"
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found."
+            exit 1
+          fi
 
+          echo "ZIPALIGN=$ZIPALIGN" >> "$GITHUB_ENV"
+          echo "APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
+
+          echo "zipalign: $ZIPALIGN"
+          echo "apksigner: $APKSIGNER"
+
+      # 13. Align APK
       - name: Align APK
         run: |
           mkdir -p output
 
-          "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+          "$ZIPALIGN" \
             -f 4 \
             XM-Lite-ForceUpdate-Off-unsigned.apk \
-            output/XM-Lite-ForceUpdate-Off.apk
+            output/XM-Lite-ForceUpdate-Off-unsigned.apk
 
-      - name: Generate signing key
+          "$ZIPALIGN" -c -v 4 \
+            output/XM-Lite-ForceUpdate-Off-unsigned.apk
+
+      # 14. Generate signing key
+      - name: Generate Signing Key
         run: |
           keytool -genkeypair \
             -v \
@@ -126,22 +266,29 @@ jobs:
             -keypass android \
             -dname "CN=XM Lite"
 
+      # 15. Sign APK
       - name: Sign APK
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+          "$APKSIGNER" sign \
             --ks release.keystore \
             --ks-pass pass:android \
             --key-pass pass:android \
-            output/XM-Lite-ForceUpdate-Off.apk
+            --out output/XM-Lite-ForceUpdate-Off.apk \
+            output/XM-Lite-ForceUpdate-Off-unsigned.apk
 
-      - name: Verify APK
+      # 16. Verify APK
+      - name: Verify Signed APK
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+          "$APKSIGNER" verify \
             --verbose \
             output/XM-Lite-ForceUpdate-Off.apk
 
+          ls -lh output/XM-Lite-ForceUpdate-Off.apk
+
+      # 17. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: XM-Lite-ForceUpdate-Off
           path: output/XM-Lite-ForceUpdate-Off.apk
+          if-no-files-found: error
