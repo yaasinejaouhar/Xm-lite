@@ -8,7 +8,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -68,9 +67,8 @@ jobs:
           )
 
           if count != 1:
-              print("ERROR: Force Update constructor call not found.")
-              print("")
-              print("Available LAB/Za constructor calls:")
+              print("ERROR: Target Force Update constructor was not found.")
+              print("Available constructor calls:")
 
               for line in data.splitlines():
                   if "LAB/Za;-><init>" in line:
@@ -81,10 +79,9 @@ jobs:
           with open(path, "w", encoding="utf-8") as f:
               f.write(data)
 
-          print("SUCCESS: Force Update flag changed to false.")
+          print("SUCCESS: Force Update disabled.")
           PY
 
-          echo ""
           echo "===== Modified section ====="
 
           grep -n -B 4 -A 6 \
@@ -96,13 +93,19 @@ jobs:
           java -jar apktool.jar b decoded \
             -o XM-Lite-ForceUpdate-Off-unsigned.apk
 
-      - name: Install Android Build Tools
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+
+      - name: Install Build Tools
+        run: |
+          sdkmanager "platform-tools" "build-tools;35.0.0"
 
       - name: Align APK
         run: |
-          sdkmanager "build-tools;35.0.0"
-
           mkdir -p output
 
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
@@ -110,7 +113,7 @@ jobs:
             XM-Lite-ForceUpdate-Off-unsigned.apk \
             output/XM-Lite-ForceUpdate-Off.apk
 
-      - name: Generate Signing Key
+      - name: Generate signing key
         run: |
           keytool -genkeypair \
             -v \
