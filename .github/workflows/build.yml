@@ -1,0 +1,48 @@
+name: Build ProCam APK
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Extract ProCam project
+        run: |
+          mkdir extracted
+          unzip -q ProCam_Reference_Matched_GitHub_Project.zip -d extracted
+
+      - name: Find Android project
+        run: |
+          echo "Files:"
+          find extracted -maxdepth 3 -type f | head -100
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build APK
+        run: |
+          cd extracted/ProCam_ExactPixel_UI
+          gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProCam-APK
+          path: extracted/ProCam_ExactPixel_UI/app/build/outputs/apk/debug/app-debug.apk
