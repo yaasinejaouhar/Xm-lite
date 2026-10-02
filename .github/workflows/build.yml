@@ -20,32 +20,51 @@ jobs:
           mkdir -p extracted
           unzip -o "ProCam_Reference_Matched_GitHub_Project.zip" -d extracted
 
+          echo "=== Extracted files ==="
+          find extracted -maxdepth 3 -type f | sort
+
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
 
-      - name: Enable AndroidX
+      - name: Configure AndroidX
         working-directory: extracted/ProCam_ExactPixel_UI
         run: |
           touch gradle.properties
 
-          grep -qxF 'android.useAndroidX=true' gradle.properties || \
-            echo 'android.useAndroidX=true' >> gradle.properties
+          if ! grep -q "^android.useAndroidX=true$" gradle.properties; then
+            echo "android.useAndroidX=true" >> gradle.properties
+          fi
 
-          grep -qxF 'android.enableJetifier=true' gradle.properties || \
-            echo 'android.enableJetifier=true' >> gradle.properties
+          if ! grep -q "^android.enableJetifier=true$" gradle.properties; then
+            echo "android.enableJetifier=true" >> gradle.properties
+          fi
 
           echo "=== gradle.properties ==="
           cat gradle.properties
 
-      - name: Build ProCam APK
+      - name: Check Gradle project
+        working-directory: extracted/ProCam_ExactPixel_UI
+        run: |
+          gradle projects --no-daemon --console=plain
+
+      - name: Build Debug APK
         working-directory: extracted/ProCam_ExactPixel_UI
         run: |
           gradle assembleDebug \
@@ -54,13 +73,11 @@ jobs:
             --console=plain
 
       - name: Find APK
-        if: success()
         run: |
-          echo "=== APK FOUND ==="
+          echo "=== APK FILES ==="
           find extracted -type f -name "*.apk" -print
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ProCam-APK
