@@ -20,20 +20,29 @@ jobs:
           mkdir -p extracted
           unzip -o "ProCam_Reference_Matched_GitHub_Project.zip" -d extracted
 
-          echo "=== Project files ==="
-          find extracted/ProCam_ExactPixel_UI -maxdepth 2 -type f | sort
-
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Prepare Android SDK
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-          sdkmanager \
+      - name: Install Android SDK packages
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          echo "Using sdkmanager:"
+          "$SDKMANAGER" --version
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -48,8 +57,11 @@ jobs:
         run: |
           touch gradle.properties
 
-          echo "android.useAndroidX=true" >> gradle.properties
-          echo "android.enableJetifier=true" >> gradle.properties
+          grep -qxF "android.useAndroidX=true" gradle.properties || \
+            echo "android.useAndroidX=true" >> gradle.properties
+
+          grep -qxF "android.enableJetifier=true" gradle.properties || \
+            echo "android.enableJetifier=true" >> gradle.properties
 
           echo "=== gradle.properties ==="
           cat gradle.properties
@@ -70,11 +82,13 @@ jobs:
             --console=plain
 
       - name: Find APK
+        if: success()
         run: |
           echo "=== APK FOUND ==="
           find extracted -type f -name "*.apk" -print
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ProCam-APK
