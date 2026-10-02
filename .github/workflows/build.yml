@@ -26,51 +26,26 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Check Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls "$ANDROID_SDK_ROOT/platforms" || true
-          ls "$ANDROID_SDK_ROOT/build-tools" || true
-
-      - name: Install required Android SDK packages
-        run: |
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f | head -1)"
-          fi
-
-          echo "Using sdkmanager: $SDKMANAGER"
-
-          yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
 
-      - name: Find Android project
-        run: |
-          echo "Searching for Android project..."
-          find extracted \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -print
-
-      - name: Check project
+      - name: Enable AndroidX
         working-directory: extracted/ProCam_ExactPixel_UI
         run: |
-          echo "Project:"
-          ls -la
-          echo "App:"
-          ls -la app
+          touch gradle.properties
 
-      - name: Build APK
+          grep -qxF 'android.useAndroidX=true' gradle.properties || \
+            echo 'android.useAndroidX=true' >> gradle.properties
+
+          grep -qxF 'android.enableJetifier=true' gradle.properties || \
+            echo 'android.enableJetifier=true' >> gradle.properties
+
+          echo "=== gradle.properties ==="
+          cat gradle.properties
+
+      - name: Build ProCam APK
         working-directory: extracted/ProCam_ExactPixel_UI
         run: |
           gradle assembleDebug \
@@ -81,7 +56,7 @@ jobs:
       - name: Find APK
         if: success()
         run: |
-          echo "APK files:"
+          echo "=== APK FOUND ==="
           find extracted -type f -name "*.apk" -print
 
       - name: Upload APK
